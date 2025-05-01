@@ -113,8 +113,8 @@
     
 - **ERD**
     
-    ![image](https://github.com/user-attachments/assets/aedefd41-c49d-4568-9895-7d4e95ad0437)
-
+    ![image](https://github.com/user-attachments/assets/804a6aaa-3b8a-4bab-8531-76938a6ee100)
+  
 ---
 
 ## 🛠️ 기술 스택
