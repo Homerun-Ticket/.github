@@ -31,18 +31,16 @@
 ## **🧑🏻‍💻** 팀원 소개
 
 |이름|역할|
-|------|-----------|
-|이규정| ㅁㄴㅇ |
-|석연걸| ㅁㄴㅇ |
-|류성현| ㅁㄴㅇ |
-|윤현호| ㅁㄴㅇ |
-|이인학| ㅁㄴㅇ |
+|------|----------------------------------------------------------------------------------------------|
+|이규정| 경매 CRUD 기능 구현 / Redis 기반 캐싱 전략 및 이벤트 연동 설계 / 동시성 제어 |
+|석연걸| 멤버, 포인트 CRUD / Spring Security를 통한 인증 인가 구현 / 결제, API Gateway / 서버 모니터링 |
+|류성현| 티켓, 예매 CRUD / 대기열 기능을 통한 트래픽 제어 / 동시성 제어 |
+|윤현호| 경기, 경기장 기능 구현 / 서버 간 통신 기반 남은 좌석 수 조회 구조 설계 및 최적화 / Redis 기반 캐싱 전략 및 이벤트 연동 설계 |
+|이인학| CI/CD 배포 |
 
 ---
 
 ## 👤 사용자 이용 흐름
-
----
 
 - 티켓 예매
   
@@ -103,7 +101,7 @@
 
 ## 🏗️ System Architecture
 
-![image.png](attachment:eddc1a32-5a59-405b-a0a4-d0a502937125:image.png)
+![image](https://github.com/user-attachments/assets/0545802f-8b25-4b54-88a6-19bdd080a3b6)
 
 ---
 
@@ -115,179 +113,16 @@
     
 - **ERD**
     
-    ![ERD.png](attachment:659ea09d-d97d-4883-81a9-d20528067fcb:ERD.png)
-    
-- **와이어프레임**
-    - **회원가입**
-        
-        ![image.png](attachment:a8a1180b-a2a1-466e-944f-09e95fd0e373:image.png)
-        
-    - **로그인**
-        
-        ![image.png](attachment:7a536404-6f03-42c4-b48d-8dae50557f40:image.png)
-        
-    - **경기 선택**
-        
-        ![image.png](attachment:6f7a6d67-e14b-43ff-9b90-dbe15d4d4167:image.png)
-        
-    - **구역 선택**
-        
-        ![image.png](attachment:092415a2-6172-4465-b828-ee55b192d4aa:image.png)
-        
-    - **좌석 선택**
-        
-        ![image.png](attachment:c00750df-f67c-4ac2-9777-3682c2fd963f:image.png)
-        
-    - **결제 화면**
-        
-        ![image.png](attachment:7cf6646c-57d3-486a-915d-d187adca9608:image.png)
-        
-    - **경매 리스트 (다건 조회)**
-        
-        ![image.png](attachment:e98d7b2a-3c1d-4d76-a0ed-fe68653e0b8e:image.png)
-        
-    - **경매 페이지 (단건 조회)**
-        
-        ![image.png](attachment:6651c2a5-0f1d-497c-be3d-289b48ed2140:image.png)
-        
-    - **경매 등록**
-        
-        ![image.png](attachment:8c1c2421-2de7-4190-9782-e22e9aa3833d:image.png)
-        
+    ![image](https://github.com/user-attachments/assets/aedefd41-c49d-4568-9895-7d4e95ad0437)
 
 ---
 
 ## 🛠️ 기술 스택
 
- **🖥 Language**
-
-[Java 17](https://www.notion.so/Java-17-1e52dc3ef514816586cff5259aeadc64?pvs=21)
-
- **📲 Interface Description Language**
-
-[IntelliJ IDEA](https://www.notion.so/IntelliJ-IDEA-1e52dc3ef51481399ad6d202d304db5b?pvs=21)
-
- **🧑🏻‍💻 Backend**
-
-[Spring Boot ](https://www.notion.so/Spring-Boot-1e52dc3ef51481138f51fcdc2d5cea8e?pvs=21)
-
-[Spring Data JPA ](https://www.notion.so/Spring-Data-JPA-1e52dc3ef51481f686ebfa7d47315cfc?pvs=21)
-
- **📈 Logging & Monitoring & Analytics**
-
-[Prometheus](https://www.notion.so/Prometheus-1e52dc3ef5148125850fce067830cffa?pvs=21)
-
-[Grafana](https://www.notion.so/Grafana-1e52dc3ef514812b9cb1e7f1c5570f8a?pvs=21)
-
- **🔐 Security**
-
-[JWT](https://www.notion.so/JWT-1e52dc3ef5148117bfa9c0653e24736b?pvs=21)
-
-[Spring Security](https://www.notion.so/Spring-Security-1e52dc3ef51480419721d09136796a39?pvs=21)
-
- **👥 Collaboration Tool**
-
-[Github](https://www.notion.so/Github-1e52dc3ef514812a9a52d0be4dc1dd33?pvs=21)
-
-[Slack](https://www.notion.so/Slack-1e52dc3ef51481b39f65e3e29d638343?pvs=21)
-
-[Notion ](https://www.notion.so/Notion-1e52dc3ef5148193bbf4c585965d7e49?pvs=21)
-
-[Figma ](https://www.notion.so/Figma-1e52dc3ef514810ea4c2dedf3cce4c4f?pvs=21)
-
-[[dbdiagram.i](http://dbdiagram.id)o ](https://www.notion.so/dbdiagram-io-1e52dc3ef5148123b576f73617576694?pvs=21)
-
- **🗃 Deployment &** Distribution               
-
-[Github Actions](https://www.notion.so/Github-Actions-1e52dc3ef51481ab9b74f29d736cc5b5?pvs=21)
-
-[Docker](https://www.notion.so/Docker-1e52dc3ef51480b89c93df6010f14eba?pvs=21)
-
-[Kubernetes](https://www.notion.so/Kubernetes-1e52dc3ef51480d685bce22c7d1ac51a?pvs=21)
-
-[Amazon EKS](https://www.notion.so/Amazon-EKS-1e52dc3ef51481428e9bdfe64fb7efcf?pvs=21)
-
-[Amazon ECR](https://www.notion.so/Amazon-ECR-1e52dc3ef51480d48cb9feacc4f92fd5?pvs=21)
-
-[Amazon RDS](https://www.notion.so/Amazon-RDS-1e52dc3ef514803d8664d0c474cf539f?pvs=21)
-
-[Amazon S3](https://www.notion.so/Amazon-S3-1e52dc3ef5148020923dfa9e44856aa4?pvs=21)
-
- **👥 API Communication**                        
-
-[Feign client](https://www.notion.so/Feign-client-1e52dc3ef51480f28021e050fb9c6cea?pvs=21)
-
-[gRPC](https://www.notion.so/gRPC-1e52dc3ef51480029afacc2923dd89e4?pvs=21)
-
-[Redis Pub/Sub](https://www.notion.so/Redis-Pub-Sub-1e52dc3ef51480ec9091fa20e62fad13?pvs=21)
+![image](https://github.com/user-attachments/assets/48466192-35c2-4f9c-8d29-648aed5ce582)
 
 ---
 
-### 🏎️ 참고용 예시
-
-### 1️⃣ 테스트 개요
-
-이 테스트는 MySQL과 Elasticsearch를 사용한 채용 공고 조회 성능을 비교하고 분석하는 데 초점을 두었습니다.
-
-두 성능을 비교할 때에는 검색 방식의 응답 시간, 처리량, 데이터 수신량 등을 기준으로 삼았습니다. 
-
-### 2️⃣ 테스트 환경 및 조건
-
-- **Elasticsearch 버전**: 8.17.2
-- **QueryDSL**: MySQL을 이용한 데이터 조회
-- **테스트 도구**: Apache JMeter
-- **테스트 요청**: HTTP GET 요청
-- **동시 요청**: 200개 (100개씩 총 2번 요청)
-- **서버 환경**: 로컬 서버 (localhost)
-- **클라이언트 환경**: JMeter 클라이언트
-
-### 3️⃣ 성능 비교
-
-- 요약
-    
-    
-    | **테스트 항목** | **MySQL 조회 (QueryDSL)** | **Elasticsearch 조회** | **성능 향상률** |
-    | --- | --- | --- | --- |
-    | **평균 응답 시간** | 48ms | 14ms | 70.83% |
-    | **최소 응답 시간** | 39ms | 9ms | 77% |
-    | **최대 응답 시간** | 117ms | 41ms | 65% |
-    | **표준편차** | 9.37ms | 3.28ms | 64% |
-    | **TPS** | 8.63/sec | 9.5/sec | +10.1% |
-    | **수신량** | 8.63KB/sec | 65.01KB/sec | +653.5% |
-    | **전송된 데이터**  | 0.57KB | 3.94KB | +591.2% |
-    | **평균 바이트**  | 6300.9 Byte | 6971.9 Byte | +10.7% |
-- MySQL(QueryDSL) 조회 시 테스트 결과 사진
-    
-    ![](https://blog.kakaocdn.net/dn/sodsl/btsMzPpRcsT/zMmdicOqFHw4pVwEYkore1/img.png)
-    
-- Elasticsearch 조회 시 테스트 결과 사진
-    
-    ![ 조회 시 14ms](https://blog.kakaocdn.net/dn/bthxJ8/btsMyHlFSHK/lxwrcOCpkkMDXZkG7VyQs1/img.png)
-    
-     조회 시 14ms
-    
-
-### 4️⃣ 테스트 결과 분석
-
-- **응답 시간**: 최소 응답 시간은 77%, 최대 응답 시간은 65% 향상됨
-- **표준편차**: 약 64% 향상됨
-- **TPS**: 약 10% 증가함
-- **수신량 및 전송량**: 수신량은 653.5%, 전송량은 591.2% 증가함
-
-### 5️⃣ 결론
-
-Elasticsearch는 MySQL에 비해 빠르고 일관된 성능을 보였습니다. 
-
-특히 대규모 데이터 처리 및 조회에서 뛰어난 성능을 보였으며, 수신 및 전송량이 크게 향상되었습니다. MySQL은 복잡한 트랜잭션 처리에는 유리하지만, 대규모 데이터 조회에서는 Elasticsearch가 훨씬 유리했습니다.
-
-따라서, 대규모 데이터 조회 성능 개선이 필요할 때는 Elasticsearch를 사용해야 적합하다는 의사결정을 내릴 수 있었습니다.
-
-### 6️⃣ 추가 테스트 계획
-
-- **다양한 쿼리 테스트**: 다양한 복잡도를 가진 쿼리를 적용하여 성능 비교
-- **대규모 데이터셋 테스트**: 실제 운영 환경을 고려하여 더 큰 규모의 데이터셋으로 테스트 및 성능 검증
-- **장기 성능 테스트**: 지속적인 부하 테스트로 장시간의 성능 안정성 및 자원 소모 점검
-- **보안 및 데이터 일관성 검증**: 실제 서비스에 적용할 수 있는지 검토
 
 ## 🏦 기술적 의사결정 및 성능 개선
 
