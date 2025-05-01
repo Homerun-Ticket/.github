@@ -1,26 +1,4 @@
-![ticketable_new_cover_380x270.png](attachment:a8dc57e0-b29d-4222-a3da-84bf3a5477f4:ticketable_new_cover_380x270.png)
-
-## 🗂️ CONTENTS
-
-🚀  **[서비스 소개](https://www.notion.so/14-1e22dc3ef514803bbcd3f2191370156a?pvs=21)**
-
-**🧑🏻‍💻 [팀원 소개](https://www.notion.so/14-1e22dc3ef514803bbcd3f2191370156a?pvs=21)**
-
-👤 [**사용자 이용 흐름**](https://www.notion.so/14-1e22dc3ef514803bbcd3f2191370156a?pvs=21)
-
-🔄 **[서비스 작동 흐름](https://www.notion.so/14-1e22dc3ef514803bbcd3f2191370156a?pvs=21)**
-
-🔑  ****[핵심 기능](https://www.notion.so/14-1e22dc3ef514803bbcd3f2191370156a?pvs=21)
-
-🏗️  ****[System Architecture](https://www.notion.so/14-1e22dc3ef514803bbcd3f2191370156a?pvs=21)
-
-📘  ****[설계 문서](https://www.notion.so/14-1e22dc3ef514803bbcd3f2191370156a?pvs=21)
-
-🛠️ **[기술 스택](https://www.notion.so/14-1e22dc3ef514803bbcd3f2191370156a?pvs=21)**
-
-🏦 ****[기술적 의사결정 및 성능 개선](https://www.notion.so/14-1e22dc3ef514803bbcd3f2191370156a?pvs=21)
-
-🚨 [**트러블 슈팅**](https://www.notion.so/14-1e22dc3ef514803bbcd3f2191370156a?pvs=21)
+![image](https://github.com/user-attachments/assets/b1413c0f-6219-4e3f-88aa-6ab8005b767d)
 
 ## 🚀 서비스 소개
 
@@ -43,15 +21,22 @@
 > 이러한 니즈를 바탕으로
 > 
 > 
-> **"티켓 예매와 티켓 경매가 함께 가능한 통합 프로야구 티켓 플랫폼"**을 기획했습니다.
-> 
+> "**티켓 예매와 티켓 경매가 함께 가능한 통합 프로야구 티켓 플랫폼**"을 기획했습니다.
+>
+
 </aside>
 
 ---
 
 ## **🧑🏻‍💻** 팀원 소개
 
-[제목 없음](https://www.notion.so/1e52dc3ef514805fb64bc3d589e5aa67?pvs=21)
+|이름|역할|
+|------|-----------|
+|이규정| ㅁㄴㅇ |
+|석연걸| ㅁㄴㅇ |
+|류성현| ㅁㄴㅇ |
+|윤현호| ㅁㄴㅇ |
+|이인학| ㅁㄴㅇ |
 
 ---
 
@@ -60,24 +45,22 @@
 ---
 
 - 티켓 예매
-    
-    ![image.png](attachment:4e842fde-b2b4-4fa0-8aae-edb873f15aac:image.png)
+  
+    ![image](https://github.com/user-attachments/assets/d748a6d9-4e5d-4517-bb8b-5edf9b74e0b3)
     
 - 티켓 경매
-    
-    ![image.png](attachment:b140cee2-dbbc-4c76-a679-6a3b92c8f63b:image.png)
-    
+  
+    ![image](https://github.com/user-attachments/assets/987f36c7-d8b4-405b-84e5-6318e8d761e3)
 
 ## 🔄 서비스 작동 흐름
 
 - 좌석 선점 및 티켓 예매
     
-    ![image.png](attachment:40f3a209-6b26-465e-a199-9f787c00fc1c:image.png)
+   ![image](https://github.com/user-attachments/assets/3291a526-5fd8-4653-8428-2b3225a80b52)
     
 - 경매
     
-    ![image.png](attachment:dd48ae75-03d8-4546-b2cc-fdbe4b8d40e8:image.png)
-    
+    ![image](https://github.com/user-attachments/assets/a322c68f-3eb5-44ea-b0b2-ab605e4f1304)
 
 ---
 
@@ -90,14 +73,20 @@
 - 대기열
 - 남은 좌석 수 조회
 - 좌석 점유 및 티켓 예매
+
 </aside>
+
+<br>
 
 <aside>
 
 🔨 **경매**
 
 - 경매 등록 / 입찰 / 상위 입찰 / 낙찰
+
 </aside>
+
+<br>
 
 <aside>
 
@@ -107,6 +96,7 @@
 - 인증/인가 서버
 - 포인트 결제
 - google reCAPTCHA 및 Rate Limiter
+
 </aside>
 
 ---
