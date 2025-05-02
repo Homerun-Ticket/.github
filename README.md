@@ -2036,5 +2036,269 @@ Spring의 `@Transactional`은 단순히 트랜잭션 시작/커밋만 처리하�
 - **Redis 갱신 실패 대응**: 이벤트 리스너 내부에서 Redis 장애 시 재시도 전략 필요
 - **분산 락 연계**: 입찰 갱신 시점에 레디스 락을 함께 적용해 경쟁 조건 해소
 - **모니터링 추가**: 입찰 시 Redis/DB 간 불일치 감지 로깅 추가 예정
+
+</details>
   
-  </details>
+<details>
+<summary><strong>API Gateway 에서 Admin 요청만 따로 인가 과정</strong></summary>
+    
+### 1. 문제 요약
+    
+- API Gateway에서 요청한 클라이언트의 JWT를 인증 서버의 `/api/v1/auth/validate` 로 보내는 코드를 작성함
+- 해당 API 에서 받은 토큰의 인증/인가를 해야 됨
+- admin 요청만 따로 인가를 어떻게 해야 될지 고민
+    
+<br>
+    
+### 2. 문제 발생 배경
+    
+기존 구조에서는 API 요청 시 다음과 같은 흐름으로 처리되었습니다:
+    
+1. 사용자의 API 요청 수신
+2. API Gateway → 인증 서버의 `/api/v1/auth/validate` 로 연결
+3. 인증 서버에서 인증/인가를 마치면 API Gateway로 인증이 완료됨을 알림
+4. API Gateway에서 요청 받은 API로 라우팅
+    
+### 어떻게 Admin 요청만 따로 인가를 할 수 있을까?
+    
+- 개선 전 `/api/v1/auth/validate` 구조
+    
+  ```java
+    // Controller
+    	@PostMapping("/v1/auth/validate")
+    	public ResponseEntity<Void> validateToken(
+    		@RequestHeader("Authorization") String authToken
+    	) {
+    		authService.validateToken(authToken);
+    		return ResponseEntity.ok().build();
+    	}
+    	
+    // Service
+    	@Transactional
+    	public void validateToken(String authToken) {
+    		String token = jwtUtil.substringToken(authToken);
+    		
+    		Claims claims = jwtUtil.extractClaims(token);
+    		
+    		Long memberId = Long.valueOf(claims.getSubject());
+    		String email = claims.get("email", String.class);
+    		
+    		if (!memberRepository.existsByIdAndEmail(memberId, email)) {
+    			throw new ServerException(USER_NOT_FOUND);
+    		}
+    		String role = claims.get("role", String.class);
+    		MemberRole.of(role);
+    	}
+  ```
+    
+- 개선 전 API Gateway의 `application-local.yml` 구조
+    
+  ```yaml
+    spring:
+      cloud:
+        gateway:
+          routes:
+           ...
+  
+            - id: module-auth
+              uri: http://localhost:8083
+              predicates:
+                - Path=/api/v*/auth/**
+                
+           ...
+    
+            - id: module-point
+              uri: http://localhost:8086
+              predicates:
+                - Path=/api/v*/points/**, /api/v*/pointHistories/**, /api/v*/payments/**, /api/v*/admin/**
+              filters:
+                - name: ValidateToken
+                - RewritePath=/module-point/(?<segment>.*), /${segment}
+  ```
+    
+- 개선 전 `ValidateTokenGatewayFilterFactory` 구조
+    
+  ```java
+    @Component
+    public class ValidateTokenGatewayFilterFactory
+    	extends AbstractGatewayFilterFactory<ValidateTokenGatewayFilterFactory.Config> {
+    	
+    	// 필터 팩토리가 Config 인스턴스를 받기 위해 사용
+    	public static class Config {}
+    	
+    	private final WebClient webClient = WebClient.create("http://localhost:8083");
+    	
+    	public ValidateTokenGatewayFilterFactory() {
+    		super(Config.class);
+    	}
+    	
+    	@Override
+    	public GatewayFilter apply(Config config) {
+    		return (exchange, chain) -> {
+    			String authHeader = exchange.getRequest().getHeaders().getFirst(HttpHeaders.AUTHORIZATION);
+    			
+    			// 헤더가 없거나 Bearer 로 시작하지 않으면 401
+    			if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+    				exchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);
+    				return exchange.getResponse().setComplete();
+    			}
+    			
+    			// 인증 서버로 토큰 검증 요청
+    			return webClient.post()
+    				.uri("/api/v1/auth/validate")
+    				.header(HttpHeaders.AUTHORIZATION, authHeader)
+    				.retrieve()
+    				.onStatus(HttpStatusCode::isError,
+    					resp -> Mono.error(new ResponseStatusException(resp.statusCode())))
+    				.bodyToMono(Void.class)
+    				.then(chain.filter(exchange))
+    				.onErrorResume(ResponseStatusException.class, ex -> {
+    					exchange.getResponse().setStatusCode(ex.getStatusCode());
+    					return exchange.getResponse().setComplete();
+    				});
+    		};
+    	}
+    }
+  ```
+    
+<br>
+    
+### 4. 개선 전략: Admin API 의 id만 따로 빼기 + Gateway에서 Admin API 일 시 Role을 보내기.
+    
+  ### ✅ 개선 후 구조
+    
+  - 개선 후 `/api/v1/auth/validate` 구조
+    
+    ```java
+    // Controller
+    	@PostMapping("/v1/auth/validate")
+    	public ResponseEntity<Void> validateToken(
+    		@RequestHeader("Authorization") String authToken,
+    		@RequestParam(required = false) String requiredRole
+    	) {
+    		authService.validateToken(authToken, requiredRole);
+    		return ResponseEntity.ok().build();
+    	}
+    
+    // Service
+    	@Transactional
+    	public void validateToken(String authToken) {
+    		String token = jwtUtil.substringToken(authToken);
+    		
+    		Claims claims = jwtUtil.extractClaims(token);
+    		
+    		Long memberId = Long.valueOf(claims.getSubject());
+    		String email = claims.get("email", String.class);
+    		
+    		if (!memberRepository.existsByIdAndEmail(memberId, email)) {
+    			throw new ServerException(USER_NOT_FOUND);
+    		}
+    		String role = claims.get("role", String.class);
+    		MemberRole.of(role);
+    		
+    		if (requiredRole != null && !requiredRole.isEmpty() && !requiredRole.equals(role)) {
+    			throw new ServerException(USER_ACCESS_DENIED);
+    		}
+    	}
+    ```
+    
+- 개선 후 API Gateway의 `application-local.yml` 구조
+    
+    ```yaml
+    spring:
+      cloud:
+        gateway:
+          routes:
+          ...
+
+            - id: module-auth
+              uri: http://localhost:8083
+              predicates:
+                - Path=/api/v*/auth/**
+    
+          ...
+    
+            - id: module-point
+              uri: http://localhost:8086
+              predicates:
+                - Path=/api/v*/points/**, /api/v*/pointHistories/**, /api/v*/payments/**
+              filters:
+                - name: ValidateToken
+                - RewritePath=/module-point/(?<segment>.*), /${segment}
+    
+            - id: admin-point
+              uri: http://localhost:8086
+              predicates:
+                - Path=/api/v*/admin/**
+              filters:
+                - name: ValidateToken
+                  args:
+                    requiredRole: ROLE_ADMIN
+                - RewritePath=/admin-point/(?<segment>.*), /${segment}
+    ```
+    
+  - 개선 후 `ValidateTokenGatewayFilterFactory` 구조
+    
+    ```java
+    @Component
+    public class ValidateTokenGatewayFilterFactory
+    	extends AbstractGatewayFilterFactory<ValidateTokenGatewayFilterFactory.Config> {
+    
+    	// 필터 팩토리가 Config 인스턴스를 받기 위해 사용
+    	@Getter
+    	@Setter
+    	public static class Config { private String requiredRole; }
+    
+    	private final WebClient webClient = WebClient.create("http://localhost:8083");
+    
+    	public ValidateTokenGatewayFilterFactory() {
+    		super(Config.class);
+    	}
+    
+    	@Override
+    	public GatewayFilter apply(Config config) {
+    		return (exchange, chain) -> {
+    			String authHeader = exchange.getRequest().getHeaders().getFirst(HttpHeaders.AUTHORIZATION);
+    
+    			// 헤더가 없거나 Bearer 로 시작하지 않으면 401
+    			if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+    				exchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);
+    				return exchange.getResponse().setComplete();
+    			}
+    
+    			// 인증 서버로 토큰 검증 요청
+    			return webClient.post()
+    				.uri(uriBuilder -> uriBuilder
+    					.path("/api/v1/auth/validate")
+    					.queryParam("requiredRole", config.getRequiredRole())
+    					.build())
+    				.header(HttpHeaders.AUTHORIZATION, authHeader)
+    				.retrieve()
+    				.onStatus(HttpStatusCode::isError,
+    					resp -> Mono.error(new ResponseStatusException(resp.statusCode())))
+    				.bodyToMono(Void.class)
+    				.then(chain.filter(exchange))
+    				.onErrorResume(ResponseStatusException.class, ex -> {
+    					exchange.getResponse().setStatusCode(ex.getStatusCode());
+    					return exchange.getResponse().setComplete();
+    				});
+    		};
+    	}
+    }
+    ```
+    
+<br>
+    
+### 5. 실행 구조
+    
+- 만약 Admin API로 들어올 경우 **requiredRole**에 `ROLE_ADMIN` 을 담아서 해당 API가 Admin API 임을 알림
+- `/api/v1/auth/validate` 컨트롤러에서 만약 requiredRole이 담겨져 온다면 서비스에서 해당 JWT 의 Role이 `ROLE_ADMIN` 인지 검사
+    
+<br>
+    
+### 6. 향후 개선 사항
+    
+- 이렇게 Gateway에서 직접 Role로 넘겨주는건 별로인 것 같다.
+- `Security Config` 에서 직접 인가를 하도록 해야 할 것 같다.
+
+</detalis>
