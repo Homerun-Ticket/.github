@@ -28,6 +28,81 @@
 
 ---
 
+## 🔑 핵심 기능
+
+<details>
+<summary><strong>🎫 티켓팅 기능</strong></summary>
+
+- **남은 좌석 수 조회**
+
+- **좌석 점유 및 티켓 예매**
+
+  <details>
+  <summary><strong>대기열</strong></summary>
+
+  ### 1. **도입 배경 및 문제 인식**
+
+  - 티켓팅 시스템은 **단시간 내에 수만 건의 요청이 집중되는 고부하 상황**이 자주 발생합니다.
+  - 특히 인기 경기나 이벤트의 예매 오픈 시점에는 수천 ~ 수만 명의 사용자가 **동시 접근**합니다.
+  - 기존 시스템은 아래와 같은 문제를 일으킬 가능성이 컸습니다:
+    - ❌ **DB 커넥션 폭주**로 인해 전체 서비스 응답 지연 또는 장애 발생
+    - ❌ 부하 분산 없이 **선착순 처리**만 수행되어 사용자 경험 저하
+
+  ### 2. 부하 테스트를 통한 성능 한계 검증
+  
+  - **k6를 이용해 동시 접속 사용자 1000명 수준으로 테스트**를 진행한 결과 다음과 같은 병목이 확인
+    - 🔻 평균 응답 지연 시간: **약 9 ~ 10초**
+    - 🔻 DB 커넥션 풀의 포화
+  - 실제 서비스보다 낮은 트래픽에서도 **성능 저하**와 **처리 불안정**이 발생,  
+    수만 명 동시접속 환경에는 **현재 구조로는 무리**라 판단.
+  - 따라서 **순차 큐잉 처리**를 위한 대기열 시스템이 필수.
+  
+  ### 3. 기능 도입 근거 및 참고 사례
+  
+  - **Yes24, 인터파크, 티켓링크** 등 주요 티켓팅 사이트에서 대기열 페이지를 제공
+  
+  </details>
+
+</details>
+
+<br>
+
+<details>
+<summary><strong>🔨 경매</strong></summary>
+
+- **경매 등록 / 입찰 / 상위 입찰 / 낙찰**
+  
+  - 티켓팅 실패 유저에게 또 다른 기회를 제공.
+  - 경매 방식 → 티켓의 가치를 시장에 맡겨 합리적인 배분 유도.
+  - 경기장 당 좌석 수가 많고(약 2만석), 인기 경기는 경쟁 치열 → **성능과 공정성, 사용자의 불편함 최소화 중요.**
+
+</details>
+
+<br>
+
+<details>
+<summary><strong>🔖 공통</strong></summary>
+
+- **인증/인가 서버**
+  
+- **포인트 결제**
+
+- **API Gateway**
+  
+  - MSA를 구성하다 보면 하나의 서비스가 여러 개의 서비스 API를 호출하는 경우가 빈번하게 일어남.
+  - 이 경우 각 서비스의 EndPoint에 직접 호출을 하는 것 보다 API Gateway를 만드는 것이 유리하다.
+  - **API Gateway가 없는 경우** : 한 서비스가 자신이 호출하려는 다른 서비스들의 endpoint를 알고 있어야 하며, 즉 이는 서비스 간의 의존 관계를 만드는 것으로 관리의 요소를 증가시킨다.
+  
+- **google reCAPTCHA 및 Rate Limiter**
+  
+  - google reCAPTCHA 및 Rate Limiter
+  - 한 유저가 악의적으로 과도한 요청을 보내 공격을 하는 경우와(ex. DDos), 악성 봇 들이 계정을 마구잡이로 생성하는 경우에 대해 생각해봤다.
+  - 과도한 요청을 막는 Rate Limiter 알고리즘과 악성 봇을 막는 google reCAPTCHA를 도입하도록 결정했다.
+
+</details>
+
+---
+
 ## **🧑🏻‍💻** 팀원 소개
 
 |이름|역할|
@@ -74,46 +149,9 @@
 
 ---
 
-## 🔑 핵심 기능
-
-<details>
-<summary><strong>🎫 티켓팅 기능</strong></summary>
-<br>
-  
-- 대기열
-- 남은 좌석 수 조회
-- 좌석 점유 및 티켓 예매
-
-</details>
-
-<br>
-
-<details>
-<summary><strong>🔨 경매</strong></summary>
-<br>
-
-- 경매 등록 / 입찰 / 상위 입찰 / 낙찰
-
-</details>
-
-<br>
-
-<details>
-<summary><strong>🔖 공통</strong></summary>
-<br>
-
-- API Gateway
-- 인증/인가 서버
-- 포인트 결제
-- google reCAPTCHA 및 Rate Limiter
-
-</details>
-
----
-
 ## 🏗️ System Architecture
 
-![image](https://github.com/user-attachments/assets/0545802f-8b25-4b54-88a6-19bdd080a3b6)
+![image](https://github.com/user-attachments/assets/9648cdcd-1d9a-459e-98b7-e93b7412e6e2)
 
 ---
 
@@ -131,7 +169,7 @@
 
 ## 🛠️ 기술 스택
 
-![image](https://github.com/user-attachments/assets/48466192-35c2-4f9c-8d29-648aed5ce582)
+![image](https://github.com/user-attachments/assets/9a4f3056-43ba-484d-b2b0-03e17fc2eee1)
 
 ---
 
