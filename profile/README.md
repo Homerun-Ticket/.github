@@ -31,11 +31,11 @@
 ## **🧑🏻‍💻** 팀원 소개
 
 |이름|역할|
-|------|----------------------------------------------------------------------------------------------|
-|이규정| 경매 CRUD 기능 구현 / Redis 기반 캐싱 전략 및 이벤트 연동 설계 / 동시성 제어 |
-|석연걸| 멤버, 포인트 CRUD / Spring Security를 통한 인증 인가 구현 / 결제, API Gateway / 서버 모니터링 |
-|류성현| 티켓, 예매 CRUD / 대기열 기능을 통한 트래픽 제어 / 동시성 제어 |
-|윤현호| 경기, 경기장 기능 구현 / 서버 간 통신 기반 남은 좌석 수 조회 구조 설계 및 최적화 / Redis 기반 캐싱 전략 및 이벤트 연동 설계 |
+|----------|--------------------------------------------------------------|
+|이규정| 경매 CRUD 기능 구현 <br> Redis 기반 캐싱 전략 및 이벤트 연동 설계 <br> 동시성 제어 |
+|석연걸| 멤버, 포인트 CRUD <br> Spring Security를 통한 인증/인가 구현 <br> 결제, API Gateway <br> 서버 모니터링 |
+|류성현| 티켓, 예매 CRUD <br> 대기열 기능을 통한 트래픽 제어 <br> 동시성 제어 |
+|윤현호| 경기, 경기장 기능 구현 <br> 서버 간 통신 기반 남은 좌석 수 조회 구조 설계 및 최적화 <br> Redis 기반 캐싱 전략 및 이벤트 연동 설계 |
 |이인학| CI/CD 배포 |
 
 ---
@@ -221,8 +221,260 @@ MSA 전환 이후 서버 간 데이터 전달을 위해 다음 세 가지 방식
 <br>
     
 ### 6. 코드
+
+- Feign Client
     
-- 추가 예정
+    ```java
+    @FeignClient(name = "ticket", url = "http://localhost:8082")
+    public interface TicketClient {
+        @GetMapping("/api/tickets/games/{gameId}")
+        Set<Long> getBookedSeatsId(@PathVariable("gameId") Long gameId);
+    }
+    ```
+    
+- gRPC
+    - .proto 파일
+    
+    ```java
+    // ticket.proto
+    syntax = "proto3";
+    
+    option java_multiple_files = true;
+    option java_package = "com.example.grpc.ticket";
+    option java_outer_classname = "TicketProto";
+    
+    package ticket;
+    
+    service TicketService {
+      // 예매된 좌석 ID 리스트 조회
+      rpc GetBookedSeatIds (BookedSeatsRequest) returns (BookedSeatsResponse);
+    }
+    
+    message BookedSeatsRequest {
+      int64 gameId = 1;
+    }
+    
+    message BookedSeatsResponse {
+      repeated int64 seatIds = 1;
+    }
+    ```
+    
+    - proto 컴파일 설정
+    
+    ```java
+    plugins {
+        id 'com.google.protobuf' version '0.9.4'
+    }
+    
+    dependencies {
+        // gRPC
+        implementation 'io.grpc:grpc-netty-shaded:1.64.0'
+        implementation 'io.grpc:grpc-protobuf:1.64.0'
+        implementation 'io.grpc:grpc-stub:1.64.0'
+        implementation 'com.google.protobuf:protobuf-java:3.25.3'
+        implementation 'org.springframework.boot:spring-boot-starter'
+        implementation 'javax.annotation:javax.annotation-api:1.3.2'
+    }
+    
+    protobuf {
+        protoc {
+            artifact = "com.google.protobuf:protoc:3.25.3"
+        }
+        plugins {
+            grpc {
+                artifact = "io.grpc:protoc-gen-grpc-java:1.64.0"
+            }
+        }
+        generateProtoTasks {
+            all().each { task ->
+                task.plugins {
+                    grpc {}
+                }
+            }
+        }
+    }
+    ```
+    
+    - 서버 구현
+    
+    ```java
+    @Configuration
+    @RequiredArgsConstructor
+    public class GrpcServerRunner {
+    
+        @Value("${grpc.port:9090}")
+        private int port;
+    
+        private final TicketServiceGrpc.TicketServiceImplBase ticketService;
+    
+        @PostConstruct
+        public void startGrpcServer() throws IOException {
+            Server server = ServerBuilder
+                    .forPort(port)
+                    .addService(ticketService)
+                    .build()
+                    .start();
+    
+            System.out.println("✅ gRPC 서버 시작됨. 포트: " + port);
+    
+            // JVM 종료 시 gRPC 서버도 종료되도록 후킹
+            Runtime.getRuntime().addShutdownHook(new Thread(server::shutdown));
+    
+            // gRPC 서버는 블로킹이므로 별도 쓰레드로 실행
+            new Thread(() -> {
+                try {
+                    server.awaitTermination();
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt(); // 인터럽트 상태 복원 (권장)
+                    System.err.println("gRPC 서버 대기 중 인터럽트 발생: " + e.getMessage());
+                }
+            }).start();
+        }
+    }
+    ```
+    
+    - 서버 구현체 코드 구현
+    
+    ```java
+    @Service
+    @RequiredArgsConstructor
+    public class TicketGrpcService extends TicketServiceGrpc.TicketServiceImplBase {
+        private final ReservationService reservationService; // 기존 좌석 조회 서비스
+    
+        @Override
+        public void getBookedSeatIds(BookedSeatsRequest request, StreamObserver<BookedSeatsResponse> responseObserver) {
+            try {
+                Long gameId = request.getGameId(); // 요청에서 gameId 추출
+                Set<Long> seatIds = reservationService.getBookedSeatsId(gameId); // 예약된 좌석 ID 조회
+    
+                BookedSeatsResponse response = BookedSeatsResponse.newBuilder()
+                        .addAllSeatIds(seatIds) // 조회 결과를 응답 메시지에 추가
+                        .build();
+    
+                responseObserver.onNext(response); // 결과 반환
+                responseObserver.onCompleted();    // 스트림 종료
+            } catch (Exception e) {
+                responseObserver.onError(e); // 에러가 발생하면 클라이언트에 에러 전달
+            }
+        }
+    }
+    ```
+    
+    - 클라이언트 설정 파일
+    
+    ```java
+    @Configuration
+    public class GrpcClientConfig {
+    
+        @Bean
+        public TicketServiceGrpc.TicketServiceBlockingStub ticketServiceBlockingStub() {
+            ManagedChannel channel = ManagedChannelBuilder
+                    .forAddress("localhost", 9092) // 티켓 서버 주소/포트
+                    .usePlaintext() // TLS 없이 통신
+                    .build();
+            return TicketServiceGrpc.newBlockingStub(channel);
+        }
+    }
+    ```
+    
+    - 클라이언트 호출 및 사용
+    
+    ```java
+    @Service
+    @RequiredArgsConstructor
+    public class GameGrpcClientService {
+        private final TicketServiceGrpc.TicketServiceBlockingStub ticketServiceBlockingStub;
+        public Set<Long> getBookedSeatIds(Long gameId) {
+            BookedSeatsRequest request = BookedSeatsRequest.newBuilder()
+                    .setGameId(gameId)
+                    .build();
+    
+            BookedSeatsResponse response = ticketServiceBlockingStub.getBookedSeatIds(request);
+    
+            return response.getSeatIdsList().stream().collect(Collectors.toSet());
+        }
+    }
+    
+    // 사용 ex
+    @Cacheable(
+            value = "seat",  // 캐시 이름
+            key = "T(String).format('%s:%s', #gameId, #sectionId)"  // 조건 조합 key
+    )
+    public List<SeatGetResponse> getSeatsCached(Long sectionId, Long gameId) {
+        log.info("💡 캐시 미적중! DB에서 seat 조회");
+        Set<Long> bookedSeatsId = gameGrpcClientService.getBookedSeatIds(gameId);
+        return seatInfo(sectionId, bookedSeatsId);
+    }
+    ```
+    
+- RSocket
+    - 의존성 주입
+    
+    ```java
+    implementation 'org.springframework.boot:spring-boot-starter-rsocket'
+    ```
+    
+    - 서버 구성
+    
+    ```java
+    @Controller
+    @RequiredArgsConstructor
+    public class TicketRSocketController {
+    
+        private final TicketService ticketService;
+    
+    	@MessageMapping("ticket.bookedSeats")
+    	public Mono<Set<Long>> getBookedSeats(Long gameId) {
+    		return Mono.fromCallable(() -> reservationService.getBookedSeatsId(gameId));
+    	}
+    }
+    ```
+    
+    - 클라이언트 설정 파일
+    
+    ```java
+    @Configuration
+    public class RSocketClientConfig {
+    
+        @Bean
+        public RSocketRequester rSocketRequester(RSocketRequester.Builder builder) {
+            return builder
+                    .tcp("localhost", 7000);
+        }
+    }
+    ```
+    
+    - 클라이언트 구성
+    
+    ```java
+    @Service
+    @RequiredArgsConstructor
+    public class GameRSocketClientService {
+    
+        private final RSocketRequester rSocketRequester;
+        public Mono<Set<Long>> getBookedSeatIds(Long gameId) {
+            return rSocketRequester
+                    .route("ticket.bookedSeats")           // 서버의 @MessageMapping과 일치해야 함
+                    .data(gameId)                          // 보내는 데이터
+                    .retrieveMono(new ParameterizedTypeReference<Set<Long>>() {});
+        }
+    }
+    
+    // 실제 사용
+    public Mono<Void> handleAfterTicketChangeAll(Long gameId, Long seatId) {
+        Seat seat = seatService.getSeat(seatId);
+        String sectionType = seat.getSection().getType();
+        Long sectionId = seat.getSection().getId();
+        return gameRSocketClientService.getBookedSeatIds(gameId)
+                .doOnNext(bookedSeatsId -> {
+                    handleAfterTicketChange(gameId, bookedSeatsId);
+                    handleAfterTicketChangeByType(gameId, sectionType, bookedSeatsId);
+                    handleAfterTicketChangeBySeat(gameId, sectionId, bookedSeatsId);
+                })
+                .doOnError(e -> log.error("❌ bookedSeatIds 가져오기 실패", e))
+                .then(); // Mono<Void> 반환
+     }
+    ```
     
 <br>
     
@@ -279,8 +531,103 @@ MSA 전환 이후 서버 간 데이터 전달을 위해 다음 세 가지 방식
 <br>
 
 ### 5. 코드
+
+- 코드
+    - 설정 파일
     
--
+    ```java
+    @Configuration
+    public class RedisSubscriberConfig {
+        @Bean
+        public MessageListenerAdapter messageListener(RedisEventListener listener) {
+            return new MessageListenerAdapter(listener, "onMessage");
+        }
+    
+        @Bean
+        public RedisMessageListenerContainer container(
+                RedisConnectionFactory factory,
+                MessageListenerAdapter adapter) {
+            RedisMessageListenerContainer container = new RedisMessageListenerContainer();
+            container.setConnectionFactory(factory);
+            container.addMessageListener(adapter, new ChannelTopic("reservation"));
+            return container;
+        }
+    }
+    ```
+    
+    - publisher
+    
+    ```java
+    @RequiredArgsConstructor
+    @Component
+    @Slf4j
+    public class TicketPublisher {
+    
+        private final RedisTemplate<String, Object> redisTemplate;
+    
+        public void publish(TicketEvent event) {
+            log.info("캐시 초기화를 위한 이벤트 발행");
+            redisTemplate.convertAndSend("reservation", event);
+        }
+    }
+    ```
+    
+    - listener
+    
+    ```java
+    @Slf4j
+    @Component
+    @RequiredArgsConstructor
+    public class RedisEventListener implements MessageListener {
+        private final ObjectMapper objectMapper;
+        private final GameCacheService gameCacheService;
+    
+        public void onMessage(Message message, byte[] pattern) {
+            try {
+                String json = new String(message.getBody());
+                TicketEvent event = objectMapper.readValue(json, TicketEvent.class);
+    
+                // 캐시 갱신 처리
+                gameCacheService.handleAfterTicketChangeAll(event.getGameId(), event.getSeatId());
+    
+                log.info("✅ 티켓 변경 이벤트 수신 - gameId: {}", event.getGameId());
+    
+            } catch (Exception e) {
+                log.error("❌ 이벤트 수신 중 에러 발생", e);
+            }
+        }
+    }
+    ```
+    
+    - 이벤트 발생
+    
+    ```java
+    // 좌석 선점 발생
+    	public ReservationResponse processReserve(AuthUser auth, ReservationCreateRequest reservationCreateRequest) {
+    		seatHoldRedisUtil.holdSeatAtomic(
+    			reservationCreateRequest.getGameId(),
+    			reservationCreateRequest.getSeatIds(),
+    			String.valueOf(auth.getMemberId())
+    		);
+    		try {
+    			ReservationResponse reservation = reservationCreateService.createReservation(
+    				auth,
+    				reservationCreateRequest
+    			);
+    			// 해당 지점에서 캐시 이벤트 발생
+    			TicketEvent ticketEvent = new TicketEvent(
+    				reservationCreateRequest.getGameId(),
+    				reservationCreateRequest.getSeatIds().get(0)
+    			);
+    			ticketPublisher.publish(ticketEvent);
+    
+    			return reservation;
+    		} catch (Exception e) {
+    			seatHoldRedisUtil.releaseSeatAtomic(reservationCreateRequest.getSeatIds(),reservationCreateRequest.getGameId());
+    			throw e;
+    		}
+    	}
+    ```
 
 <br>
 
@@ -1689,5 +2036,269 @@ Spring의 `@Transactional`은 단순히 트랜잭션 시작/커밋만 처리하�
 - **Redis 갱신 실패 대응**: 이벤트 리스너 내부에서 Redis 장애 시 재시도 전략 필요
 - **분산 락 연계**: 입찰 갱신 시점에 레디스 락을 함께 적용해 경쟁 조건 해소
 - **모니터링 추가**: 입찰 시 Redis/DB 간 불일치 감지 로깅 추가 예정
+
+</details>
   
-  </details>
+<details>
+<summary><strong>API Gateway 에서 Admin 요청만 따로 인가 과정</strong></summary>
+    
+### 1. 문제 요약
+    
+- API Gateway에서 요청한 클라이언트의 JWT를 인증 서버의 `/api/v1/auth/validate` 로 보내는 코드를 작성함
+- 해당 API 에서 받은 토큰의 인증/인가를 해야 됨
+- admin 요청만 따로 인가를 어떻게 해야 될지 고민
+    
+<br>
+    
+### 2. 문제 발생 배경
+    
+기존 구조에서는 API 요청 시 다음과 같은 흐름으로 처리되었습니다:
+    
+1. 사용자의 API 요청 수신
+2. API Gateway → 인증 서버의 `/api/v1/auth/validate` 로 연결
+3. 인증 서버에서 인증/인가를 마치면 API Gateway로 인증이 완료됨을 알림
+4. API Gateway에서 요청 받은 API로 라우팅
+    
+### 어떻게 Admin 요청만 따로 인가를 할 수 있을까?
+    
+- 개선 전 `/api/v1/auth/validate` 구조
+    
+  ```java
+    // Controller
+    	@PostMapping("/v1/auth/validate")
+    	public ResponseEntity<Void> validateToken(
+    		@RequestHeader("Authorization") String authToken
+    	) {
+    		authService.validateToken(authToken);
+    		return ResponseEntity.ok().build();
+    	}
+    	
+    // Service
+    	@Transactional
+    	public void validateToken(String authToken) {
+    		String token = jwtUtil.substringToken(authToken);
+    		
+    		Claims claims = jwtUtil.extractClaims(token);
+    		
+    		Long memberId = Long.valueOf(claims.getSubject());
+    		String email = claims.get("email", String.class);
+    		
+    		if (!memberRepository.existsByIdAndEmail(memberId, email)) {
+    			throw new ServerException(USER_NOT_FOUND);
+    		}
+    		String role = claims.get("role", String.class);
+    		MemberRole.of(role);
+    	}
+  ```
+    
+- 개선 전 API Gateway의 `application-local.yml` 구조
+    
+  ```yaml
+    spring:
+      cloud:
+        gateway:
+          routes:
+           ...
+  
+            - id: module-auth
+              uri: http://localhost:8083
+              predicates:
+                - Path=/api/v*/auth/**
+                
+           ...
+    
+            - id: module-point
+              uri: http://localhost:8086
+              predicates:
+                - Path=/api/v*/points/**, /api/v*/pointHistories/**, /api/v*/payments/**, /api/v*/admin/**
+              filters:
+                - name: ValidateToken
+                - RewritePath=/module-point/(?<segment>.*), /${segment}
+  ```
+    
+- 개선 전 `ValidateTokenGatewayFilterFactory` 구조
+    
+  ```java
+    @Component
+    public class ValidateTokenGatewayFilterFactory
+    	extends AbstractGatewayFilterFactory<ValidateTokenGatewayFilterFactory.Config> {
+    	
+    	// 필터 팩토리가 Config 인스턴스를 받기 위해 사용
+    	public static class Config {}
+    	
+    	private final WebClient webClient = WebClient.create("http://localhost:8083");
+    	
+    	public ValidateTokenGatewayFilterFactory() {
+    		super(Config.class);
+    	}
+    	
+    	@Override
+    	public GatewayFilter apply(Config config) {
+    		return (exchange, chain) -> {
+    			String authHeader = exchange.getRequest().getHeaders().getFirst(HttpHeaders.AUTHORIZATION);
+    			
+    			// 헤더가 없거나 Bearer 로 시작하지 않으면 401
+    			if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+    				exchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);
+    				return exchange.getResponse().setComplete();
+    			}
+    			
+    			// 인증 서버로 토큰 검증 요청
+    			return webClient.post()
+    				.uri("/api/v1/auth/validate")
+    				.header(HttpHeaders.AUTHORIZATION, authHeader)
+    				.retrieve()
+    				.onStatus(HttpStatusCode::isError,
+    					resp -> Mono.error(new ResponseStatusException(resp.statusCode())))
+    				.bodyToMono(Void.class)
+    				.then(chain.filter(exchange))
+    				.onErrorResume(ResponseStatusException.class, ex -> {
+    					exchange.getResponse().setStatusCode(ex.getStatusCode());
+    					return exchange.getResponse().setComplete();
+    				});
+    		};
+    	}
+    }
+  ```
+    
+<br>
+    
+### 4. 개선 전략: Admin API 의 id만 따로 빼기 + Gateway에서 Admin API 일 시 Role을 보내기.
+    
+  ### ✅ 개선 후 구조
+    
+  - 개선 후 `/api/v1/auth/validate` 구조
+    
+    ```java
+    // Controller
+    	@PostMapping("/v1/auth/validate")
+    	public ResponseEntity<Void> validateToken(
+    		@RequestHeader("Authorization") String authToken,
+    		@RequestParam(required = false) String requiredRole
+    	) {
+    		authService.validateToken(authToken, requiredRole);
+    		return ResponseEntity.ok().build();
+    	}
+    
+    // Service
+    	@Transactional
+    	public void validateToken(String authToken) {
+    		String token = jwtUtil.substringToken(authToken);
+    		
+    		Claims claims = jwtUtil.extractClaims(token);
+    		
+    		Long memberId = Long.valueOf(claims.getSubject());
+    		String email = claims.get("email", String.class);
+    		
+    		if (!memberRepository.existsByIdAndEmail(memberId, email)) {
+    			throw new ServerException(USER_NOT_FOUND);
+    		}
+    		String role = claims.get("role", String.class);
+    		MemberRole.of(role);
+    		
+    		if (requiredRole != null && !requiredRole.isEmpty() && !requiredRole.equals(role)) {
+    			throw new ServerException(USER_ACCESS_DENIED);
+    		}
+    	}
+    ```
+    
+- 개선 후 API Gateway의 `application-local.yml` 구조
+    
+    ```yaml
+    spring:
+      cloud:
+        gateway:
+          routes:
+          ...
+
+            - id: module-auth
+              uri: http://localhost:8083
+              predicates:
+                - Path=/api/v*/auth/**
+    
+          ...
+    
+            - id: module-point
+              uri: http://localhost:8086
+              predicates:
+                - Path=/api/v*/points/**, /api/v*/pointHistories/**, /api/v*/payments/**
+              filters:
+                - name: ValidateToken
+                - RewritePath=/module-point/(?<segment>.*), /${segment}
+    
+            - id: admin-point
+              uri: http://localhost:8086
+              predicates:
+                - Path=/api/v*/admin/**
+              filters:
+                - name: ValidateToken
+                  args:
+                    requiredRole: ROLE_ADMIN
+                - RewritePath=/admin-point/(?<segment>.*), /${segment}
+    ```
+    
+  - 개선 후 `ValidateTokenGatewayFilterFactory` 구조
+    
+    ```java
+    @Component
+    public class ValidateTokenGatewayFilterFactory
+    	extends AbstractGatewayFilterFactory<ValidateTokenGatewayFilterFactory.Config> {
+    
+    	// 필터 팩토리가 Config 인스턴스를 받기 위해 사용
+    	@Getter
+    	@Setter
+    	public static class Config { private String requiredRole; }
+    
+    	private final WebClient webClient = WebClient.create("http://localhost:8083");
+    
+    	public ValidateTokenGatewayFilterFactory() {
+    		super(Config.class);
+    	}
+    
+    	@Override
+    	public GatewayFilter apply(Config config) {
+    		return (exchange, chain) -> {
+    			String authHeader = exchange.getRequest().getHeaders().getFirst(HttpHeaders.AUTHORIZATION);
+    
+    			// 헤더가 없거나 Bearer 로 시작하지 않으면 401
+    			if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+    				exchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);
+    				return exchange.getResponse().setComplete();
+    			}
+    
+    			// 인증 서버로 토큰 검증 요청
+    			return webClient.post()
+    				.uri(uriBuilder -> uriBuilder
+    					.path("/api/v1/auth/validate")
+    					.queryParam("requiredRole", config.getRequiredRole())
+    					.build())
+    				.header(HttpHeaders.AUTHORIZATION, authHeader)
+    				.retrieve()
+    				.onStatus(HttpStatusCode::isError,
+    					resp -> Mono.error(new ResponseStatusException(resp.statusCode())))
+    				.bodyToMono(Void.class)
+    				.then(chain.filter(exchange))
+    				.onErrorResume(ResponseStatusException.class, ex -> {
+    					exchange.getResponse().setStatusCode(ex.getStatusCode());
+    					return exchange.getResponse().setComplete();
+    				});
+    		};
+    	}
+    }
+    ```
+    
+<br>
+    
+### 5. 실행 구조
+    
+- 만약 Admin API로 들어올 경우 **requiredRole**에 `ROLE_ADMIN` 을 담아서 해당 API가 Admin API 임을 알림
+- `/api/v1/auth/validate` 컨트롤러에서 만약 requiredRole이 담겨져 온다면 서비스에서 해당 JWT 의 Role이 `ROLE_ADMIN` 인지 검사
+    
+<br>
+    
+### 6. 향후 개선 사항
+    
+- 이렇게 Gateway에서 직접 Role로 넘겨주는건 별로인 것 같다.
+- `Security Config` 에서 직접 인가를 하도록 해야 할 것 같다.
+
+</detalis>
