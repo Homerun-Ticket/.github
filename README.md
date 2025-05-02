@@ -221,8 +221,260 @@ MSA 전환 이후 서버 간 데이터 전달을 위해 다음 세 가지 방식
 <br>
     
 ### 6. 코드
+
+- Feign Client
     
-- 추가 예정
+    ```java
+    @FeignClient(name = "ticket", url = "http://localhost:8082")
+    public interface TicketClient {
+        @GetMapping("/api/tickets/games/{gameId}")
+        Set<Long> getBookedSeatsId(@PathVariable("gameId") Long gameId);
+    }
+    ```
+    
+- gRPC
+    - .proto 파일
+    
+    ```java
+    // ticket.proto
+    syntax = "proto3";
+    
+    option java_multiple_files = true;
+    option java_package = "com.example.grpc.ticket";
+    option java_outer_classname = "TicketProto";
+    
+    package ticket;
+    
+    service TicketService {
+      // 예매된 좌석 ID 리스트 조회
+      rpc GetBookedSeatIds (BookedSeatsRequest) returns (BookedSeatsResponse);
+    }
+    
+    message BookedSeatsRequest {
+      int64 gameId = 1;
+    }
+    
+    message BookedSeatsResponse {
+      repeated int64 seatIds = 1;
+    }
+    ```
+    
+    - proto 컴파일 설정
+    
+    ```java
+    plugins {
+        id 'com.google.protobuf' version '0.9.4'
+    }
+    
+    dependencies {
+        // gRPC
+        implementation 'io.grpc:grpc-netty-shaded:1.64.0'
+        implementation 'io.grpc:grpc-protobuf:1.64.0'
+        implementation 'io.grpc:grpc-stub:1.64.0'
+        implementation 'com.google.protobuf:protobuf-java:3.25.3'
+        implementation 'org.springframework.boot:spring-boot-starter'
+        implementation 'javax.annotation:javax.annotation-api:1.3.2'
+    }
+    
+    protobuf {
+        protoc {
+            artifact = "com.google.protobuf:protoc:3.25.3"
+        }
+        plugins {
+            grpc {
+                artifact = "io.grpc:protoc-gen-grpc-java:1.64.0"
+            }
+        }
+        generateProtoTasks {
+            all().each { task ->
+                task.plugins {
+                    grpc {}
+                }
+            }
+        }
+    }
+    ```
+    
+    - 서버 구현
+    
+    ```java
+    @Configuration
+    @RequiredArgsConstructor
+    public class GrpcServerRunner {
+    
+        @Value("${grpc.port:9090}")
+        private int port;
+    
+        private final TicketServiceGrpc.TicketServiceImplBase ticketService;
+    
+        @PostConstruct
+        public void startGrpcServer() throws IOException {
+            Server server = ServerBuilder
+                    .forPort(port)
+                    .addService(ticketService)
+                    .build()
+                    .start();
+    
+            System.out.println("✅ gRPC 서버 시작됨. 포트: " + port);
+    
+            // JVM 종료 시 gRPC 서버도 종료되도록 후킹
+            Runtime.getRuntime().addShutdownHook(new Thread(server::shutdown));
+    
+            // gRPC 서버는 블로킹이므로 별도 쓰레드로 실행
+            new Thread(() -> {
+                try {
+                    server.awaitTermination();
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt(); // 인터럽트 상태 복원 (권장)
+                    System.err.println("gRPC 서버 대기 중 인터럽트 발생: " + e.getMessage());
+                }
+            }).start();
+        }
+    }
+    ```
+    
+    - 서버 구현체 코드 구현
+    
+    ```java
+    @Service
+    @RequiredArgsConstructor
+    public class TicketGrpcService extends TicketServiceGrpc.TicketServiceImplBase {
+        private final ReservationService reservationService; // 기존 좌석 조회 서비스
+    
+        @Override
+        public void getBookedSeatIds(BookedSeatsRequest request, StreamObserver<BookedSeatsResponse> responseObserver) {
+            try {
+                Long gameId = request.getGameId(); // 요청에서 gameId 추출
+                Set<Long> seatIds = reservationService.getBookedSeatsId(gameId); // 예약된 좌석 ID 조회
+    
+                BookedSeatsResponse response = BookedSeatsResponse.newBuilder()
+                        .addAllSeatIds(seatIds) // 조회 결과를 응답 메시지에 추가
+                        .build();
+    
+                responseObserver.onNext(response); // 결과 반환
+                responseObserver.onCompleted();    // 스트림 종료
+            } catch (Exception e) {
+                responseObserver.onError(e); // 에러가 발생하면 클라이언트에 에러 전달
+            }
+        }
+    }
+    ```
+    
+    - 클라이언트 설정 파일
+    
+    ```java
+    @Configuration
+    public class GrpcClientConfig {
+    
+        @Bean
+        public TicketServiceGrpc.TicketServiceBlockingStub ticketServiceBlockingStub() {
+            ManagedChannel channel = ManagedChannelBuilder
+                    .forAddress("localhost", 9092) // 티켓 서버 주소/포트
+                    .usePlaintext() // TLS 없이 통신
+                    .build();
+            return TicketServiceGrpc.newBlockingStub(channel);
+        }
+    }
+    ```
+    
+    - 클라이언트 호출 및 사용
+    
+    ```java
+    @Service
+    @RequiredArgsConstructor
+    public class GameGrpcClientService {
+        private final TicketServiceGrpc.TicketServiceBlockingStub ticketServiceBlockingStub;
+        public Set<Long> getBookedSeatIds(Long gameId) {
+            BookedSeatsRequest request = BookedSeatsRequest.newBuilder()
+                    .setGameId(gameId)
+                    .build();
+    
+            BookedSeatsResponse response = ticketServiceBlockingStub.getBookedSeatIds(request);
+    
+            return response.getSeatIdsList().stream().collect(Collectors.toSet());
+        }
+    }
+    
+    // 사용 ex
+    @Cacheable(
+            value = "seat",  // 캐시 이름
+            key = "T(String).format('%s:%s', #gameId, #sectionId)"  // 조건 조합 key
+    )
+    public List<SeatGetResponse> getSeatsCached(Long sectionId, Long gameId) {
+        log.info("💡 캐시 미적중! DB에서 seat 조회");
+        Set<Long> bookedSeatsId = gameGrpcClientService.getBookedSeatIds(gameId);
+        return seatInfo(sectionId, bookedSeatsId);
+    }
+    ```
+    
+- RSocket
+    - 의존성 주입
+    
+    ```java
+    implementation 'org.springframework.boot:spring-boot-starter-rsocket'
+    ```
+    
+    - 서버 구성
+    
+    ```java
+    @Controller
+    @RequiredArgsConstructor
+    public class TicketRSocketController {
+    
+        private final TicketService ticketService;
+    
+    	@MessageMapping("ticket.bookedSeats")
+    	public Mono<Set<Long>> getBookedSeats(Long gameId) {
+    		return Mono.fromCallable(() -> reservationService.getBookedSeatsId(gameId));
+    	}
+    }
+    ```
+    
+    - 클라이언트 설정 파일
+    
+    ```java
+    @Configuration
+    public class RSocketClientConfig {
+    
+        @Bean
+        public RSocketRequester rSocketRequester(RSocketRequester.Builder builder) {
+            return builder
+                    .tcp("localhost", 7000);
+        }
+    }
+    ```
+    
+    - 클라이언트 구성
+    
+    ```java
+    @Service
+    @RequiredArgsConstructor
+    public class GameRSocketClientService {
+    
+        private final RSocketRequester rSocketRequester;
+        public Mono<Set<Long>> getBookedSeatIds(Long gameId) {
+            return rSocketRequester
+                    .route("ticket.bookedSeats")           // 서버의 @MessageMapping과 일치해야 함
+                    .data(gameId)                          // 보내는 데이터
+                    .retrieveMono(new ParameterizedTypeReference<Set<Long>>() {});
+        }
+    }
+    
+    // 실제 사용
+    public Mono<Void> handleAfterTicketChangeAll(Long gameId, Long seatId) {
+        Seat seat = seatService.getSeat(seatId);
+        String sectionType = seat.getSection().getType();
+        Long sectionId = seat.getSection().getId();
+        return gameRSocketClientService.getBookedSeatIds(gameId)
+                .doOnNext(bookedSeatsId -> {
+                    handleAfterTicketChange(gameId, bookedSeatsId);
+                    handleAfterTicketChangeByType(gameId, sectionType, bookedSeatsId);
+                    handleAfterTicketChangeBySeat(gameId, sectionId, bookedSeatsId);
+                })
+                .doOnError(e -> log.error("❌ bookedSeatIds 가져오기 실패", e))
+                .then(); // Mono<Void> 반환
+     }
+    ```
     
 <br>
     
@@ -279,8 +531,103 @@ MSA 전환 이후 서버 간 데이터 전달을 위해 다음 세 가지 방식
 <br>
 
 ### 5. 코드
+
+- 코드
+    - 설정 파일
     
--
+    ```java
+    @Configuration
+    public class RedisSubscriberConfig {
+        @Bean
+        public MessageListenerAdapter messageListener(RedisEventListener listener) {
+            return new MessageListenerAdapter(listener, "onMessage");
+        }
+    
+        @Bean
+        public RedisMessageListenerContainer container(
+                RedisConnectionFactory factory,
+                MessageListenerAdapter adapter) {
+            RedisMessageListenerContainer container = new RedisMessageListenerContainer();
+            container.setConnectionFactory(factory);
+            container.addMessageListener(adapter, new ChannelTopic("reservation"));
+            return container;
+        }
+    }
+    ```
+    
+    - publisher
+    
+    ```java
+    @RequiredArgsConstructor
+    @Component
+    @Slf4j
+    public class TicketPublisher {
+    
+        private final RedisTemplate<String, Object> redisTemplate;
+    
+        public void publish(TicketEvent event) {
+            log.info("캐시 초기화를 위한 이벤트 발행");
+            redisTemplate.convertAndSend("reservation", event);
+        }
+    }
+    ```
+    
+    - listener
+    
+    ```java
+    @Slf4j
+    @Component
+    @RequiredArgsConstructor
+    public class RedisEventListener implements MessageListener {
+        private final ObjectMapper objectMapper;
+        private final GameCacheService gameCacheService;
+    
+        public void onMessage(Message message, byte[] pattern) {
+            try {
+                String json = new String(message.getBody());
+                TicketEvent event = objectMapper.readValue(json, TicketEvent.class);
+    
+                // 캐시 갱신 처리
+                gameCacheService.handleAfterTicketChangeAll(event.getGameId(), event.getSeatId());
+    
+                log.info("✅ 티켓 변경 이벤트 수신 - gameId: {}", event.getGameId());
+    
+            } catch (Exception e) {
+                log.error("❌ 이벤트 수신 중 에러 발생", e);
+            }
+        }
+    }
+    ```
+    
+    - 이벤트 발생
+    
+    ```java
+    // 좌석 선점 발생
+    	public ReservationResponse processReserve(AuthUser auth, ReservationCreateRequest reservationCreateRequest) {
+    		seatHoldRedisUtil.holdSeatAtomic(
+    			reservationCreateRequest.getGameId(),
+    			reservationCreateRequest.getSeatIds(),
+    			String.valueOf(auth.getMemberId())
+    		);
+    		try {
+    			ReservationResponse reservation = reservationCreateService.createReservation(
+    				auth,
+    				reservationCreateRequest
+    			);
+    			// 해당 지점에서 캐시 이벤트 발생
+    			TicketEvent ticketEvent = new TicketEvent(
+    				reservationCreateRequest.getGameId(),
+    				reservationCreateRequest.getSeatIds().get(0)
+    			);
+    			ticketPublisher.publish(ticketEvent);
+    
+    			return reservation;
+    		} catch (Exception e) {
+    			seatHoldRedisUtil.releaseSeatAtomic(reservationCreateRequest.getSeatIds(),reservationCreateRequest.getGameId());
+    			throw e;
+    		}
+    	}
+    ```
 
 <br>
 
