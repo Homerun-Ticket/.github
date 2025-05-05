@@ -2339,4 +2339,58 @@ Spring의 `@Transactional`은 단순히 트랜잭션 시작/커밋만 처리하�
 - 이렇게 Gateway에서 직접 Role로 넘겨주는건 별로인 것 같다.
 - `Security Config` 에서 직접 인가를 하도록 해야 할 것 같다.
 
-</detalis>
+</details>
+
+<details>
+<summary><strong>Path Validation Error 문제</strong></summary>
+
+### 1. 문제 요약
+    
+- ci.yml 작성 중 `Gradle dependencies caching` 중 actions/cache@v4에서 지정한 캐시 경로가 워크플로우 실행 중에 존재하지 않아서 캐시가 저장되지 않았다.
+- 빌드 자체에는 영향을 주지 않았지만, 캐시가 저장되지 않아 다음 워크플로우 실행 시 캐시를 재사용할 수 없어서 빌드 시간이 늘어날 수 있다.
+- .해결 책 중 /gradlew --version , ./gradlew projects 중 어느 것을 사용할지 고민하였다.
+
+<br>
+    
+### 2. 문제 발생 배경
+    
+일부 모듈만 빌드 되면 Gradle이 모든 캐시 디렉토리(~/.gradle/caches, ~/.gradle/wrapper)를 완전히 초기화하거나 채우지 않을 수 있다. 
+    
+특히 ./gradlew --version 같은 초기화 명령이 없었기 때문에, 워크플로우 초기에 캐시 디렉토리가 생성되지 않았을 가능성이 크다.
+    
+actions/cache@v4가 워크플로우 끝에서 ~/.gradle/caches나 ~/.gradle/wrapper를 저장하려 했지만, 디렉토리가 비어 있거나 존재하지 않아 경고가 발생하는 것이다.
+    
+### 어떻게 해결할 수 있을까?
+    
+- ./gradlew --version
+- ./gradlew projects
+    
+둘 중 하나를 선택하여 해결할 수 있다.
+    
+나는 ./gradlew --version 대신 ./gradlew projects을 사용하였다.
+    
+./gradlew projects 명령은 Gradle 프로젝트의 구조를 출력하는 명령으로, 프로젝트와 하위 프로젝트(모듈) 목록을 표시한다. 이 명령을 워크플로우에 추가한 목적은 ~/.gradle/caches와 ~/.gradle/wrapper 디렉토리를 생성해서 actions/cache@v4가 캐시를 저장할 수 있도록 보장하였다.
+    
+이 디렉토리가 있으면 워크플로우 끝에서 actions/cache@v4가 이들을 캐시로 저장할 수 있어, Path Validation Error 경고를 방지한다.
+    
+<br>
+    
+### ⭕ 공통점
+    
+둘 다 Gradle을 초기화해서 ~/.gradle/caches와 ~/.gradle/wrapper 디렉토리를 생성.Path Validation Error 경고를 해결하는 데 사용 가능하다.
+    
+### ❌ 차이점
+    
+- ./gradlew --version:
+  - **작업**: Gradle 버전 정보 출력.
+  - **속도**: 매우 빠름 (1~2초).
+  - **부하**: 최소한의 작업, 프로젝트 설정을 읽지 않음.
+    
+- ./gradlew projects:
+  - **작업**: 프로젝트 구조 분석 및 출력.
+  - **속도**: 약간 느림 (2~3초, 프로젝트 크기에 따라 다름).
+  - **부하**: build.gradle, settings.gradle을 파싱하므로 약간 더 무거움.
+    
+./gradlew projects는 프로젝트 구조를 확인하는 부가 효과가 있고 프로젝트 구조 초기화를 해주어 잠재적인 캐시 문제를 예방한다.
+
+</details>
